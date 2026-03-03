@@ -1,0 +1,248 @@
+"""Tests for clippy.types — wire format correctness."""
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from clippy.types import (
+    Cell,
+    Pixel,
+    PTYUpdate,
+    TTYResize,
+    OutputText,
+    OutputCells,
+    OutputPixels,
+    from_json,
+)
+
+GOLDEN_DIR = Path(__file__).parent / "golden"
+
+
+# --- Golden file validation ---
+
+GOLDEN_OUTPUT_CASES = [
+    (
+        "output_text_basic.json",
+        OutputText(
+            text="\U0001f525",
+            coordinates=(40, 12),
+            fg=(1.0, 0.5, 0.0, 1.0),
+            bg=None,
+        ),
+    ),
+    (
+        "output_text_null_bg.json",
+        OutputText(
+            text="It looks like you're writing a letter!",
+            coordinates=(0, 0),
+            fg=(1.0, 1.0, 0.0, 1.0),
+            bg=None,
+        ),
+    ),
+    (
+        "output_cells_empty.json",
+        OutputCells(cells=[]),
+    ),
+    (
+        "output_cells_unicode.json",
+        OutputCells(cells=[
+            Cell(character="\u2584", coordinates=(20, 10),
+                 fg=(1.0, 0.3, 0.0, 1.0), bg=None),
+        ]),
+    ),
+    (
+        "output_pixels_single.json",
+        OutputPixels(pixels=[
+            Pixel(coordinates=(79, 47), color=(0.0, 1.0, 0.0, 1.0)),
+        ]),
+    ),
+    (
+        "output_pixels_zero_alpha.json",
+        OutputPixels(pixels=[
+            Pixel(coordinates=(0, 0), color=(1.0, 0.0, 0.0, 0.0)),
+        ]),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "filename,obj",
+    GOLDEN_OUTPUT_CASES,
+    ids=[c[0] for c in GOLDEN_OUTPUT_CASES],
+)
+def test_golden_output(filename, obj):
+    """Serialize output object and compare against golden file."""
+    golden_path = GOLDEN_DIR / filename
+    actual = obj.to_json()
+    if os.environ.get("UPDATE_GOLDEN"):
+        golden_path.write_text(actual)
+    expected = json.loads(golden_path.read_text())
+    assert json.loads(actual) == expected
+
+
+def test_golden_pty_update():
+    """Parse golden pty_update JSON and verify Python object."""
+    raw = (GOLDEN_DIR / "pty_update_basic.json").read_text()
+    msg = from_json(raw)
+    assert isinstance(msg, PTYUpdate)
+    assert msg.size == (80, 24)
+    assert len(msg.cells) == 1
+    assert msg.cells[0].character == "H"
+    assert msg.cells[0].coordinates == (0, 0)
+    assert msg.cells[0].fg == (1.0, 1.0, 1.0, 1.0)
+    assert msg.cells[0].bg == (0.0, 0.0, 0.0, 1.0)
+    assert msg.cursor == (0, 0)
+
+
+def test_golden_tty_resize():
+    """Parse golden tty_resize JSON and verify Python object."""
+    raw = (GOLDEN_DIR / "tty_resize.json").read_text()
+    msg = from_json(raw)
+    assert isinstance(msg, TTYResize)
+    assert msg.width == 120
+    assert msg.height == 40
+
+
+# --- Round-trip tests ---
+
+def test_output_text_roundtrip():
+    obj = OutputText(text="hello", coordinates=(10, 5),
+                     fg=(0.0, 1.0, 0.0, 1.0), bg=None)
+    data = json.loads(obj.to_json())
+    assert "output_text" in data
+    inner = data["output_text"]
+    assert inner["text"] == "hello"
+    assert inner["coordinates"] == [10, 5]
+    assert inner["fg"] == [0.0, 1.0, 0.0, 1.0]
+    assert inner["bg"] is None
+
+
+def test_output_cells_roundtrip():
+    cell = Cell(character="X", coordinates=(5, 3),
+                fg=(1.0, 0.0, 0.0, 1.0), bg=None)
+    obj = OutputCells(cells=[cell])
+    data = json.loads(obj.to_json())
+    assert "output_cells" in data
+    # Direct array format — no "cells" wrapper
+    cells = data["output_cells"]
+    assert isinstance(cells, list)
+    assert len(cells) == 1
+    assert cells[0]["character"] == "X"
+    assert cells[0]["coordinates"] == [5, 3]
+    assert cells[0]["fg"] == [1.0, 0.0, 0.0, 1.0]
+    assert cells[0]["bg"] is None
+
+
+def test_output_pixels_roundtrip():
+    pixel = Pixel(coordinates=(79, 47), color=(0.0, 1.0, 0.0, 1.0))
+    obj = OutputPixels(pixels=[pixel])
+    data = json.loads(obj.to_json())
+    assert "output_pixels" in data
+    # Direct array format — no "pixels" wrapper
+    pixels = data["output_pixels"]
+    assert isinstance(pixels, list)
+    assert len(pixels) == 1
+    assert pixels[0]["coordinates"] == [79, 47]
+    assert pixels[0]["color"] == [0.0, 1.0, 0.0, 1.0]
+
+
+# --- Input deserialization ---
+
+def test_parse_pty_update(sample_pty_update_json):
+    msg = from_json(sample_pty_update_json)
+    assert isinstance(msg, PTYUpdate)
+    assert msg.size == (80, 24)
+    assert len(msg.cells) == 1
+    assert msg.cells[0].character == "A"
+    assert msg.cursor == (0, 0)  # default when absent
+
+
+def test_parse_pty_update_with_cursor():
+    raw = '{"pty_update": {"size": [80, 24], "cells": [], "cursor": [10, 5]}}'
+    msg = from_json(raw)
+    assert isinstance(msg, PTYUpdate)
+    assert msg.cursor == (10, 5)
+
+
+def test_parse_tty_resize(sample_tty_resize_json):
+    msg = from_json(sample_tty_resize_json)
+    assert isinstance(msg, TTYResize)
+    assert msg.width == 120
+    assert msg.height == 40
+
+
+# --- Edge cases ---
+
+def test_empty_cells():
+    raw = '{"pty_update": {"size": [80, 24], "cells": []}}'
+    msg = from_json(raw)
+    assert isinstance(msg, PTYUpdate)
+    assert msg.cells == []
+
+
+def test_null_colors():
+    raw = ('{"pty_update": {"size": [80, 24], "cells": '
+           '[{"character": "X", "coordinates": [0, 0], "fg": null, "bg": null}]}}')
+    msg = from_json(raw)
+    assert isinstance(msg, PTYUpdate)
+    assert msg.cells[0].fg is None
+    assert msg.cells[0].bg is None
+
+
+def test_unicode_cell():
+    cell = Cell(character="\u2584", coordinates=(0, 0),
+                fg=(1.0, 1.0, 1.0, 1.0), bg=None)
+    obj = OutputCells(cells=[cell])
+    data = json.loads(obj.to_json())
+    assert data["output_cells"][0]["character"] == "\u2584"
+
+
+def test_zero_alpha_preserved():
+    pixel = Pixel(coordinates=(0, 0), color=(1.0, 0.0, 0.0, 0.0))
+    obj = OutputPixels(pixels=[pixel])
+    data = json.loads(obj.to_json())
+    assert data["output_pixels"][0]["color"] == [1.0, 0.0, 0.0, 0.0]
+
+
+def test_pixel_optional_color():
+    pixel = Pixel(coordinates=(0, 0))
+    assert pixel.color is None
+    obj = OutputPixels(pixels=[pixel])
+    data = json.loads(obj.to_json())
+    assert data["output_pixels"][0]["color"] is None
+
+
+def test_output_text_with_both_colors():
+    obj = OutputText(
+        text="hi",
+        coordinates=(1, 2),
+        fg=(1.0, 0.0, 0.0, 1.0),
+        bg=(0.0, 0.0, 1.0, 0.5),
+    )
+    data = json.loads(obj.to_json())
+    inner = data["output_text"]
+    assert inner["fg"] == [1.0, 0.0, 0.0, 1.0]
+    assert inner["bg"] == [0.0, 0.0, 1.0, 0.5]
+
+
+# --- Malformed input ---
+
+@pytest.mark.parametrize("raw", [
+    "",                         # empty
+    "   ",                      # whitespace
+    "not json at all",          # invalid JSON
+    "{unclosed",                # truncated JSON
+    "null",                     # valid JSON, not a dict
+    "42",                       # JSON number
+    '{"unknown_key": {}}',      # unknown message type
+    '{"pty_update": null}',     # null payload
+    # Tuple-length validation (M4)
+    '{"pty_update": {"size": [80], "cells": []}}',          # size length 1
+    '{"pty_update": {"size": [80, 24, 1], "cells": []}}',   # size length 3
+    '{"pty_update": {"size": [80, 24], "cells": [], "cursor": [0]}}',  # cursor length 1
+    '{"pty_update": {"size": [80, 24], "cells": [{"character": "A", "coordinates": [0], "fg": null, "bg": null}]}}',  # coordinates length 1
+    '{"pty_update": {"size": [80, 24], "cells": [{"character": "A", "coordinates": [0, 0], "fg": [1.0, 0.0], "bg": null}]}}',  # fg length 2
+])
+def test_malformed_input_returns_none(raw):
+    assert from_json(raw) is None
