@@ -1,0 +1,13 @@
+#!/bin/bash
+# Clippy's Revenge — launcher wrapper
+#
+# Resolves its own install location, sets PYTHONPATH, and execs the launcher.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:$PYTHONPATH}"
+
+exec python3 -m clippy.launcher "$@"
