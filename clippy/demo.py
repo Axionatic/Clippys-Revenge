@@ -75,8 +75,12 @@ def render_frame(outputs: list[OutputMessage], writer, flush) -> None:
 
         elif isinstance(out, OutputPixels):
             for pixel in out.pixels:
-                x, y = pixel.coordinates
-                seq = move_to(x, y) + color_to_fg(pixel.color) + "\u2580" + RESET
+                if pixel.color is None:
+                    continue  # ghost erasure — not renderable in demo mode
+                x, py = pixel.coordinates
+                cell_y = py // 2
+                ch = "\u2580" if py % 2 == 0 else "\u2584"  # ▀ upper, ▄ lower
+                seq = move_to(x, cell_y) + color_to_fg(pixel.color) + ch + RESET
                 writer(seq)
 
     flush()

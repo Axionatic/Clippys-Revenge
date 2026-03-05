@@ -100,11 +100,27 @@ class TestRenderFrame:
         assert RESET in result
 
     def test_output_pixels(self):
-        pixel = Pixel(coordinates=(2, 1), color=(1.0, 0.5, 0.0, 1.0))
+        # pixel y=4 (even) → cell_y=2, upper half block ▀
+        pixel = Pixel(coordinates=(2, 4), color=(1.0, 0.5, 0.0, 1.0))
         result = self._capture([OutputPixels(pixels=[pixel])])
-        assert move_to(2, 1) in result
-        assert "\u2580" in result
+        assert move_to(2, 2) in result
+        assert "\u2580" in result  # ▀ upper half
         assert RESET in result
+
+    def test_output_pixels_lower_half(self):
+        # pixel y=5 (odd) → cell_y=2, lower half block ▄
+        pixel = Pixel(coordinates=(3, 5), color=(0.0, 1.0, 0.5, 1.0))
+        result = self._capture([OutputPixels(pixels=[pixel])])
+        assert move_to(3, 2) in result
+        assert "\u2584" in result  # ▄ lower half
+        assert RESET in result
+
+    def test_output_pixels_null_color_skipped(self):
+        # ghost erasure pixels (color=None) must not render any block character
+        pixel = Pixel(coordinates=(5, 6), color=None)
+        result = self._capture([OutputPixels(pixels=[pixel])])
+        assert "\u2580" not in result
+        assert "\u2584" not in result
 
     def test_empty_outputs(self):
         flush_count = [0]
