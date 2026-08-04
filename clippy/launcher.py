@@ -89,11 +89,23 @@ def find_tattoy() -> str | None:
 
 
 def ensure_executable(path: Path) -> None:
-    """Add shebang if missing and set +x. Idempotent."""
+    """Normalize shebang to the running interpreter and set +x. Idempotent.
+
+    Tattoy spawns plugin scripts via their shebang, so the recorded interpreter
+    must be absolute and must match the one running the launcher — otherwise
+    a uv-managed or non-PATH Python won't propagate to plugins.
+    """
     try:
+        desired = f"#!{sys.executable}"
         content = path.read_text()
-        if not content.startswith("#!"):
-            path.write_text("#!/usr/bin/env python3\n" + content)
+        if content.startswith("#!"):
+            first_nl = content.find("\n")
+            current_shebang = content[:first_nl] if first_nl != -1 else content
+            if current_shebang != desired:
+                rest = content[first_nl + 1:] if first_nl != -1 else ""
+                path.write_text(desired + "\n" + rest)
+        else:
+            path.write_text(desired + "\n" + content)
         current = path.stat().st_mode
         path.chmod(current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     except OSError as e:

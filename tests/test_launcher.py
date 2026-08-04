@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -77,21 +78,40 @@ class TestEnsureExecutable:
         script = tmp_path / "test.py"
         script.write_text('"""docstring"""\nimport sys\n')
         ensure_executable(script)
-        assert script.read_text().startswith("#!/usr/bin/env python3\n")
+        assert script.read_text().startswith(f"#!{sys.executable}\n")
         assert '"""docstring"""' in script.read_text()
 
     def test_preserves_existing_shebang(self, tmp_path):
         script = tmp_path / "test.py"
-        script.write_text("#!/usr/bin/env python3\nimport sys\n")
+        script.write_text(f"#!{sys.executable}\nimport sys\n")
         ensure_executable(script)
-        assert script.read_text().count("#!/usr/bin/env python3") == 1
+        assert script.read_text().count(f"#!{sys.executable}") == 1
 
     def test_sets_executable(self, tmp_path):
         script = tmp_path / "test.py"
-        script.write_text("#!/usr/bin/env python3\n")
+        script.write_text(f"#!{sys.executable}\n")
         script.chmod(0o644)
         ensure_executable(script)
         assert script.stat().st_mode & stat.S_IXUSR
+
+    def test_writes_sys_executable_shebang(self, tmp_path):
+        script = tmp_path / "noshebang.py"
+        script.write_text("print('hi')\n")
+        ensure_executable(script)
+        first_line = script.read_text().splitlines()[0]
+        assert first_line == f"#!{sys.executable}"
+
+    def test_rewrites_stale_env_shebang(self, tmp_path):
+        # Plugins shipped with #!/usr/bin/env python3 must be normalized to
+        # the absolute interpreter so tattoy spawns them under the same Python.
+        script = tmp_path / "plugin.py"
+        script.write_text("#!/usr/bin/env python3\nimport sys\n")
+        ensure_executable(script)
+        text = script.read_text()
+        assert text.startswith(f"#!{sys.executable}\n")
+        assert "import sys" in text
+        # Original shebang gone; new one not duplicated
+        assert text.count("#!") == 1
 
 
 # ---------------------------------------------------------------------------

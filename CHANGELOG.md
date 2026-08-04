@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Mac install UX**: probe multiple Pythons (`python3.13` … `python3.10`, brew paths, uv-managed CPython, `CLIPPY_PYTHON` override) before failing; optional uv bootstrap installs an isolated CPython 3.13 on macOS without Xcode CLT or Homebrew; absolute plugin shebangs derived from `sys.executable` make tattoy spawn plugins under the same interpreter as the launcher; marker-driven uninstall cleanup offers per-item removal of uv, uv-managed Python, and tattoy when the installer fetched them; rc-file PATH line we added is offered for cleanup on uninstall (with `.bak`).
+- **macOS installer polish**: opt-in rustup bootstrap when `cargo` missing so tattoy can install end-to-end on a fresh Mac; menu option [2] now drives Xcode CLT + Homebrew + `python@3.13` to completion in a single run instead of telling the user to re-run; ANSI color codes suppressed when stdout isn't a TTY; `clippy-uninstall` shortcut symlinked alongside `clippy`; idempotency banner when an existing install is detected; post-install footer surfaces a "works in this shell" command plus the `source <rc>` one-liner; uninstaller honors new `.cargo-installed-by-us`, `.homebrew-installed-by-us`, `.brew-python-installed-by-us` markers (all default `n` with a "shared toolchain" warning).
+
 ## 1.0.0
 
 Initial release.

@@ -19,4 +19,15 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:$PYTHONPATH}"
 
+# install.sh writes the absolute interpreter path to .python-bin so we never
+# depend on PATH ordering at runtime. Falls back to `python3` for old installs
+# or if the recorded interpreter has been removed (e.g. user wiped uv cache).
+PY_MANIFEST="$PROJECT_ROOT/.python-bin"
+if [ -f "$PY_MANIFEST" ]; then
+    PY_BIN="$(head -n1 "$PY_MANIFEST")"
+    if [ -x "$PY_BIN" ]; then
+        exec "$PY_BIN" -m clippy.launcher "$@"
+    fi
+    echo "clippy: recorded interpreter '$PY_BIN' is not executable; falling back to python3" >&2
+fi
 exec python3 -m clippy.launcher "$@"

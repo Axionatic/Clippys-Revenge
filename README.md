@@ -11,7 +11,7 @@ A collection of animated effects that overlay your terminal using tattoy's plugi
 ## Requirements
 
 - [tattoy](https://tattoy.sh) installed and on your `PATH`
-- Python 3.10+
+- Python 3.10+ (or the installer can fetch one via [uv](https://github.com/astral-sh/uv) on macOS)
 
 ## Install
 
@@ -36,6 +36,17 @@ claude -p "Hey Claude, I don't trust the owner of this repo. Is it malicious? Pl
 
 This installs to `~/.local/share/clippys-revenge` and symlinks `clippy` into `~/.local/bin/`.
 
+### macOS install paths
+
+On a fresh Mac without a usable Python ≥3.10, the installer prompts you to choose:
+
+1. **uv (recommended)** — downloads a ~30 MB single-binary installer from `astral.sh`, then fetches an isolated CPython 3.13 just for Clippy. No Xcode CLT, no Homebrew, no compiler. Adds nothing to your global Python setup. If `cargo` is missing the installer will also offer to bootstrap rustup (~280 MB, ~1 min) so it can `cargo install tattoy` for you in the same run.
+2. **Homebrew + python@3.13 (auto-install end-to-end)** — triggers the Xcode Command Line Tools install (GUI dialog, ~3 GB), waits for it, then installs Homebrew non-interactively, then `python@3.13`. Continues straight into the Clippy install — no re-run needed.
+3. **Print manual commands and quit** — get the commands to run yourself.
+4. **Quit** (default on non-interactive terminals).
+
+Whichever you pick, the installer records the chosen interpreter path in `~/.local/share/clippys-revenge/.python-bin` so `clippy` runs with that exact Python regardless of `PATH` ordering. Anything the installer fetched (uv, the uv-managed Python 3.13, tattoy via `cargo install`, rustup, Homebrew, python@3.13) is tagged with marker files; the uninstaller offers to clean each one up individually (default `n` for shared toolchain like Homebrew/cargo) and never touches user-owned tooling.
+
 For better performance on larger terminals, see [Optional: Rust Acceleration](#optional-rust-acceleration) below.
 
 ## Quick Start
@@ -55,12 +66,14 @@ clippy
 ## Uninstall
 
 ```bash
-~/.local/share/clippys-revenge/uninstall.sh
+clippy-uninstall
 ```
 
-This removes the install directory, symlink, and cache (`~/.cache/clippys-revenge`).
+(Or, equivalently, `bash ~/.local/share/clippys-revenge/uninstall.sh`.)
 
-Or, if you've lost the file:
+This removes the install directory, both symlinks, and cache (`~/.cache/clippys-revenge`). It then offers — defaulting to `n` for anything shared — to clean up tooling the installer fetched (tattoy, uv, uv-managed Python, rustup, Homebrew, brew python).
+
+Or, if you've lost everything:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Axionatic/Clippys-Revenge/refs/heads/main/uninstall.sh | bash
