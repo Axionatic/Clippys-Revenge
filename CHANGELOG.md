@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`--sleep-only` screensaver mode**: effects fire only after the terminal has been genuinely idle for the full `CLIPPY_INTERVAL`. Any screen activity (typing or background output) restarts the countdown, including mid-windup, and the cursor-shake summon is disabled. Shaking to cancel a *running* effect is unchanged. Also settable via `CLIPPY_SLEEP_ONLY=1`; no-op in `--demo`.
+
 ## 1.0.0
 
 Initial release.

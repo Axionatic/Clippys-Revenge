@@ -53,6 +53,9 @@ python3 -m clippy.launcher --theme-reset          # Reset to default (Tokyo Nigh
 python3 -m clippy.launcher --shake off            # Disable shake detection
 python3 -m clippy.launcher --shake 8              # Require more reversals
 
+# Screensaver mode: only fire when the terminal has been idle
+python3 -m clippy.launcher --sleep-only
+
 # Pause at startup to read diagnostics
 python3 -m clippy.launcher --startup-pause
 
@@ -88,7 +91,7 @@ User runs `clippy` CLI
 - `clippy/themes.py` — Theme system: `Theme` dataclass (18 named RGB colors in standard terminal color scheme format), `DemoTheme` dataclass (ANSI escape strings for demo-mode IDE rendering), color scheme JSON parsing (`parse_theme_json()`), palette TOML generation (`theme_to_palette_toml()`), demo theme derivation (`theme_to_demo_theme()`), persistence (`get_active_theme()` / `set_active_theme_name()` via `~/.cache/clippys-revenge/theme.json`), bundled theme loading, user theme import (file or URL via `urllib.request`). `default_demo_theme()` returns the original hardcoded VS Code dark+ colors for backward compatibility.
 - `clippy/theme_browser.py` — Interactive TUI theme browser using alternate screen buffer and raw terminal input (`tty`/`termios`). Arrow keys navigate, `/` enters search mode (substring filter), Enter selects and applies, `q`/Escape quits. Falls back to simple numbered list when raw terminal is unavailable (piped stdin, dumb terminal). **Important:** All TUI output uses `\r\n` (not bare `\n`) because raw terminal mode disables the kernel's LF→CRLF translation.
 - `clippy/themes_data.json` — 35 curated themes in standard terminal color scheme JSON format (Tokyo Night, Dracula, Catppuccin x4, Nord, Gruvbox x2, Solarized x2, One Dark/Light, Monokai, Rose Pine x3, Kanagawa, Material, Ayu x2, Everforest x2, GitHub x2, Tomorrow Night, Nightfox, Palenight, Tokyonight Storm, Zenburn, Synthwave 84, Horizon Dark, Cobalt2, Poimandres, Snazzy).
-- `clippy/launcher.py` — CLI entry point. Discovers effects, generates tattoy config, execs tattoy. Uses `unified_runner.py` as the single plugin entry point (no separate mascot plugin). Supports `--version`/`-V`, `--shake off|N`, `--startup-pause`, `--theme NAME`, `--themes`, `--theme-list`, `--theme-import PATH`, `--theme-reset` flags. Configures ALT+T as tattoy keybinding to toggle effects on/off. Shell fallback chain: `$SHELL → shutil.which("bash") → /bin/sh`.
+- `clippy/launcher.py` — CLI entry point. Discovers effects, generates tattoy config, execs tattoy. Uses `unified_runner.py` as the single plugin entry point (no separate mascot plugin). Supports `--version`/`-V`, `--shake off|N`, `--sleep-only`, `--startup-pause`, `--theme NAME`, `--themes`, `--theme-list`, `--theme-import PATH`, `--theme-reset` flags. Configures ALT+T as tattoy keybinding to toggle effects on/off. Shell fallback chain: `$SHELL → shutil.which("bash") → /bin/sh`.
 - `clippy/demo.py` — ANSI terminal renderer for `--demo` mode (no tattoy required). Accepts an optional `DemoTheme` parameter; defaults to `default_demo_theme()` when no theme is active.
 - `clippy/ide_template.py` — Generates a fake VS Code-style Python editor background for `--demo` mode. Effects render on top, visually destroying the code.
 - `bin/clippy` — Shell wrapper that sets `PYTHONPATH` and execs `python3 -m clippy.launcher`.
@@ -131,6 +134,7 @@ The golden files in `tests/golden/` are the source of truth for wire format.
 - `CLIPPY_FORCE_PYTHON` env var (`1`/`true`/`yes`) disables native module dispatch
 - `CLIPPY_NO_TOAST` env var (`1`/`true`/`yes`) suppresses the startup mode toast
 - `CLIPPY_SHAKE` env var — `off` to disable cursor-shake detection, or a positive integer to set reversal threshold (default `5`)
+- `CLIPPY_SLEEP_ONLY` env var (`1`/`true`/`yes`) — screensaver mode: any `PTYUpdate` restarts the idle countdown (`UnifiedEffect._reset_idle()`), and the WATCHING shake-summon is disabled. Read at call time in `UnifiedEffect.__init__` (not module level — module-level reads break `monkeypatch.setenv` in tests). No-op in demo mode. The windup-abort is only observable when `CLIPPY_INTERVAL > 10`, since below that `_imminent_early_start` is negative
 - Launcher auto-detects Rust toolchain and builds `clippy_native` on first run if `cargo` is available
 - Active theme persisted in `~/.cache/clippys-revenge/theme.json`; user-imported themes stored in `~/.cache/clippys-revenge/themes/*.json`
 - Theme palette written to `~/.cache/clippys-revenge/palette.toml` (258 entries: ANSI 0-15 from theme, 16-231 standard xterm 6x6x6 cube, 232-255 standard grayscale, plus foreground/background)
@@ -142,7 +146,7 @@ The golden files in `tests/golden/` are the source of truth for wire format.
 - **Property-based tests** for effects: assert coordinates in bounds, colors in `[0.0, 1.0]`, correct output types — parametrized over multiple seeds.
 - **`MessageReader`** helper in `test_harness.py` prevents premature shutdown in `run()` tests (plain `io.StringIO` hits EOF instantly, setting the shutdown event).
 - **Malformed input resilience:** `from_json()` returns `None` for empty lines, whitespace, invalid JSON, unknown keys, null payloads — harness must never crash on bad input.
-- **Unified lifecycle** (`UnifiedEffect`): `WATCHING → IMMINENT_EARLY → IMMINENT_DEEP → ACTIVE (inner effect) → CACKLING → loop` (live) or `→ DONE` (demo). Cursor-shake: WATCHING → jump to IMMINENT_DEEP; ACTIVE → cancel inner effect; all other phases ignore L+R completely.
+- **Unified lifecycle** (`UnifiedEffect`): `WATCHING → IMMINENT_EARLY → IMMINENT_DEEP → ACTIVE (inner effect) → CACKLING → loop` (live) or `→ DONE` (demo). Cursor-shake: WATCHING → jump to IMMINENT_DEEP; ACTIVE → cancel inner effect; all other phases ignore L+R completely. Under `--sleep-only`: a PTY update in WATCHING/IMMINENT_EARLY/IMMINENT_DEEP resets to WATCHING, the WATCHING summon is gated off, and the ACTIVE dismiss is unchanged.
 - Inner effect lifecycles (standalone, driven by `cancel()` / `is_done`):
   - Fire: `IDLE → SPREADING → BURNING → WASTELAND → DONE` (or `cancel()` → `CANCEL_FADING → DONE`)
   - Invaders: `IDLE → BOMBARDMENT → ACTIVE → FADING → DONE` (ACTIVE capped at 1050 ticks; `cancel()` skips to FADING)

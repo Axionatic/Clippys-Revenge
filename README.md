@@ -162,6 +162,27 @@ clippy --shake off
 CLIPPY_INTERVAL=600 clippy
 ```
 
+### Screensaver mode (`--sleep-only`)
+
+By default the countdown runs regardless of what you're doing, so Clippy can turn up
+mid-keystroke. `--sleep-only` makes him behave like a screensaver instead — effects fire only
+after the terminal has been genuinely quiet for the full interval:
+
+```bash
+clippy --sleep-only
+```
+
+- **Any screen activity restarts the countdown.** That includes your typing *and* background
+  output — a build finishing or a `tail -f` counts as activity, so a chatty terminal keeps Clippy
+  asleep indefinitely. (The terminal protocol has no keypress event, so "activity" means "the
+  screen changed".)
+- **Activity during the 10-second windup aborts it.** Catch Clippy going orange and press a key —
+  he calms straight back down to watching. (Only visible when `CLIPPY_INTERVAL` is above 10.)
+- **The shake summon is disabled** — you can no longer short-circuit the countdown. Shaking
+  during a *running* effect still cancels it, and `--shake off` still turns that off too.
+
+Also settable as `CLIPPY_SLEEP_ONLY=1`.
+
 ## Optional: Rust Acceleration
 
 Clippy's Revenge works perfectly with just Python; no compiled dependencies

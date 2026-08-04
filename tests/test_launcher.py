@@ -338,6 +338,32 @@ class TestMain:
 
         assert os.environ.get("CLIPPY_EFFECTS") == "fire"
 
+    def test_sleep_only_flag_sets_env(self):
+        """--sleep-only sets CLIPPY_SLEEP_ONLY=1 in env."""
+        # patch.dict snapshots and restores os.environ — main() writes the var,
+        # and without the snapshot it would leak into every later test.
+        with mock.patch.dict(os.environ), \
+             mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
+             mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
+             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("time.sleep"), \
+             mock.patch("os.execvp"):
+            os.environ.pop("CLIPPY_SLEEP_ONLY", None)
+            main(["--sleep-only"])
+            assert os.environ.get("CLIPPY_SLEEP_ONLY") == "1"
+
+    def test_no_sleep_only_flag_leaves_env_alone(self):
+        """Without --sleep-only the launcher does not set CLIPPY_SLEEP_ONLY."""
+        with mock.patch.dict(os.environ), \
+             mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
+             mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
+             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("time.sleep"), \
+             mock.patch("os.execvp"):
+            os.environ.pop("CLIPPY_SLEEP_ONLY", None)
+            main([])
+            assert "CLIPPY_SLEEP_ONLY" not in os.environ
+
     def test_effects_comma_separated(self):
         """--effects fire,grove sets CLIPPY_EFFECTS=fire,grove."""
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \

@@ -362,6 +362,12 @@ def _build_parser() -> argparse.ArgumentParser:
              "(number of reversals needed, default 5; higher = harder to trigger)",
     )
     parser.add_argument(
+        "--sleep-only",
+        action="store_true",
+        help="only trigger effects when the terminal has been idle; any screen "
+             "activity restarts the countdown and the cursor-shake summon is disabled",
+    )
+    parser.add_argument(
         "--theme",
         metavar="NAME",
         default=None,
@@ -473,6 +479,10 @@ def main(argv: list[str] | None = None) -> int:
                 [f"Invalid --shake value: {args.shake!r}", "", "Use 'off' or a positive integer."],
             )
             return 1
+
+    # --sleep-only handling
+    if args.sleep_only:
+        os.environ["CLIPPY_SLEEP_ONLY"] = "1"
 
     # --theme-reset
     if args.theme_reset:

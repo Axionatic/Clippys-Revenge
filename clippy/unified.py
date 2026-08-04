@@ -61,6 +61,7 @@ class UnifiedEffect:
         *,
         seed: int | None = None,
         idle_secs: float | None = None,
+        sleep_only: bool | None = None,
     ) -> None:
         self._rng = random.Random(seed)
         # Normalize: accept single class or list
@@ -75,6 +76,9 @@ class UnifiedEffect:
             idle_secs = float(os.environ.get("CLIPPY_INTERVAL", "300"))
         self._idle_secs = idle_secs
         self._demo_mode = idle_secs == 0
+        if sleep_only is None:
+            sleep_only = os.environ.get("CLIPPY_SLEEP_ONLY", "").lower() in ("1", "true", "yes")
+        self._sleep_only = sleep_only and not self._demo_mode
         self._phase = UnifiedPhase.WATCHING
         self._shake = CursorShakeDetector()
         self._inner: Effect | None = None
@@ -119,6 +123,15 @@ class UnifiedEffect:
             self._effect_start = total
             # cackle_start/end set when entering CACKLING
 
+    def _reset_idle(self) -> None:
+        """Return to WATCHING and restart the countdown (--sleep-only)."""
+        # No _compute_timing() needed: its thresholds are absolute, and the only
+        # writer that makes _effect_start relative is the summon branch, which is
+        # gated off whenever _sleep_only is set. No _shake.reset() either — the
+        # detector is never fed during WATCHING/IMMINENT_* under sleep-only.
+        self._phase = UnifiedPhase.WATCHING
+        self._tick_count = BLINK_DURATION
+
     # -- Protocol callbacks -----------------------------------------------
 
     def _invalidate_on_resize(self) -> None:
@@ -137,10 +150,17 @@ class UnifiedEffect:
 
         # L+R only during WATCHING and ACTIVE
         if self._phase == UnifiedPhase.WATCHING:
-            if self._shake.update(update.cursor):
+            if self._sleep_only:
+                self._reset_idle()
+            elif self._shake.update(update.cursor):
                 self._phase = UnifiedPhase.IMMINENT_DEEP
                 self._effect_start = self._tick_count + round(5 * FPS)
                 self._shake.reset()
+        elif self._sleep_only and self._phase in (
+            UnifiedPhase.IMMINENT_EARLY,
+            UnifiedPhase.IMMINENT_DEEP,
+        ):
+            self._reset_idle()
         elif self._phase == UnifiedPhase.ACTIVE:
             if self._shake.update(update.cursor):
                 if self._inner is not None:
