@@ -7,7 +7,7 @@
 #
 # Probe order:
 #   1. $CLIPPY_PYTHON env override
-#   2. python3.13, python3.12, python3.11, python3.10 on PATH
+#   2. python3.14, python3.13, python3.12, python3.11, python3.10 on PATH
 #   3. /opt/homebrew/bin/python3 (Apple Silicon brew)
 #   4. /usr/local/bin/python3 (Intel brew / generic)
 #   5. ~/.local/share/uv/python/cpython-*/bin/python3 (newest first)
@@ -42,7 +42,7 @@ find_python() {
 
     # 2. Version-pinned interpreters on PATH (newest first)
     local v
-    for v in 3.13 3.12 3.11 3.10; do
+    for v in 3.14 3.13 3.12 3.11 3.10; do
         cand="$(command -v "python$v" 2>/dev/null || true)"
         if [ -n "$cand" ] && resolved="$(_clippy_check_python "$cand")"; then
             PYTHON_BIN="$resolved"

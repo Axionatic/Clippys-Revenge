@@ -82,6 +82,18 @@ write_file() {
     fi
 }
 
+# write_marker_now — write a marker immediately, during bootstrap, rather
+# than waiting for the batched write after project installation. Only takes
+# effect when $INSTALL_DIR already exists (an update run, with a working
+# uninstall.sh already in place) — on a fresh install there is nothing yet
+# for that uninstall.sh to belong to, so a crash before project installation
+# completes leaves no install to clean up regardless of markers; the batched
+# write below covers the normal fresh-install case identically to before.
+write_marker_now() {
+    [ -d "$INSTALL_DIR" ] || return 0
+    write_marker "$1"
+}
+
 # Capture cargo presence once for end-of-install Rust note.
 HAVE_CARGO_AT_START=false
 if command -v cargo >/dev/null 2>&1; then
@@ -155,7 +167,7 @@ discover_python() {
     fi
     # 2. Version-pinned
     if [ -z "$PYTHON_BIN" ]; then
-        for v in 3.13 3.12 3.11 3.10; do
+        for v in 3.14 3.13 3.12 3.11 3.10; do
             cand="$(command -v "python$v" 2>/dev/null || true)"
             if [ -n "$cand" ] && \
                "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' >/dev/null 2>&1; then
@@ -228,6 +240,8 @@ uv_install_path() {
             PYTHON_BIN="(uv-managed CPython 3.13)"
             UV_INSTALLED_BY_US=true
             UV_PYTHON_INSTALLED_BY_US=true
+            write_marker_now "$INSTALL_DIR/.uv-installed-by-us"
+            write_marker_now "$INSTALL_DIR/.uv-python-installed-by-us"
             return 0
         fi
         local answer=""
@@ -243,6 +257,7 @@ uv_install_path() {
             exit 1
         fi
         UV_INSTALLED_BY_US=true
+        write_marker_now "$INSTALL_DIR/.uv-installed-by-us"
     else
         ok "uv already installed — reusing it."
     fi
@@ -268,11 +283,13 @@ uv_install_path() {
             "$HOME/.local/bin/uv" self uninstall >/dev/null 2>&1 || \
                 rm -rf "$HOME/.local/share/uv" "$HOME/.local/bin/uv"
             UV_INSTALLED_BY_US=false
+            rm -f "$INSTALL_DIR/.uv-installed-by-us" 2>/dev/null || true
         fi
         err "Try the Advanced menu → Homebrew option instead."
         exit 1
     fi
     UV_PYTHON_INSTALLED_BY_US=true
+    write_marker_now "$INSTALL_DIR/.uv-python-installed-by-us"
 
     PYTHON_BIN="$(uv python find 3.13)"
     if [ -z "$PYTHON_BIN" ] || [ ! -x "$PYTHON_BIN" ]; then
@@ -333,6 +350,7 @@ ensure_homebrew() {
     if $DRY_RUN; then
         info "WOULD: install Homebrew via official non-interactive installer"
         HOMEBREW_INSTALLED_BY_US=true
+        write_marker_now "$INSTALL_DIR/.homebrew-installed-by-us"
         return 0
     fi
     info "Installing Homebrew (non-interactive)..."
@@ -342,6 +360,7 @@ ensure_homebrew() {
         exit 1
     fi
     HOMEBREW_INSTALLED_BY_US=true
+    write_marker_now "$INSTALL_DIR/.homebrew-installed-by-us"
     # Make brew reachable in this process.
     if [ -x /opt/homebrew/bin/brew ]; then
         eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -361,6 +380,7 @@ homebrew_install_path() {
     if $DRY_RUN; then
         info "WOULD: brew install python@3.13"
         BREW_PYTHON_INSTALLED_BY_US=true
+        write_marker_now "$INSTALL_DIR/.brew-python-installed-by-us"
         PYTHON_BIN="(homebrew python@3.13)"
         return 0
     fi
@@ -370,6 +390,7 @@ homebrew_install_path() {
         exit 1
     fi
     BREW_PYTHON_INSTALLED_BY_US=true
+    write_marker_now "$INSTALL_DIR/.brew-python-installed-by-us"
     ok "python@3.13 installed."
     discover_python
     if [ -z "${PYTHON_BIN:-}" ]; then
@@ -469,8 +490,14 @@ if [ -z "${PYTHON_BIN:-}" ]; then
     fi
 fi
 
-py_version="$("$PYTHON_BIN" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])')"
-ok "Python $py_version at $PYTHON_BIN"
+# In dry-run the bootstrap paths never install anything, so PYTHON_BIN holds a
+# descriptive placeholder rather than a real path — don't try to execute it.
+if $DRY_RUN && [ ! -x "$PYTHON_BIN" ]; then
+    ok "Python would be: $PYTHON_BIN"
+else
+    py_version="$("$PYTHON_BIN" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])')"
+    ok "Python $py_version at $PYTHON_BIN"
+fi
 
 # -- Git / tarball ----------------------------------------------------------
 
@@ -532,6 +559,7 @@ bootstrap_cargo_macos() {
         return 1
     fi
     CARGO_INSTALLED_BY_US=true
+    write_marker_now "$INSTALL_DIR/.cargo-installed-by-us"
     ok "rustup + cargo installed."
     return 0
 }
@@ -553,8 +581,8 @@ download_tattoy_binary() {
         info "WOULD: download $url"
         info "WOULD: verify ${asset}.sha256 checksum"
         info "WOULD: extract and copy tattoy to $HOME/.local/bin/tattoy"
-        info "WOULD: write marker $INSTALL_DIR/.tattoy-installed-via-binary"
         TATTOY_INSTALLED_VIA_BINARY=true
+        write_marker_now "$INSTALL_DIR/.tattoy-installed-via-binary"
         return 0
     fi
 
@@ -592,6 +620,7 @@ download_tattoy_binary() {
     chmod +x "$HOME/.local/bin/tattoy"
     rm -rf "$tmp"
     TATTOY_INSTALLED_VIA_BINARY=true
+    write_marker_now "$INSTALL_DIR/.tattoy-installed-via-binary"
     ok "tattoy installed to ~/.local/bin/tattoy"
     return 0
 }
@@ -600,13 +629,14 @@ download_tattoy_binary() {
 install_tattoy_via_brew() {
     if $DRY_RUN; then
         info "WOULD: brew install tattoy-org/tap/tattoy"
-        info "WOULD: write marker $INSTALL_DIR/.tattoy-installed-via-brew"
         TATTOY_INSTALLED_VIA_BREW=true
+        write_marker_now "$INSTALL_DIR/.tattoy-installed-via-brew"
         return 0
     fi
     info "Running: brew install tattoy-org/tap/tattoy"
     if brew install tattoy-org/tap/tattoy; then
         TATTOY_INSTALLED_VIA_BREW=true
+        write_marker_now "$INSTALL_DIR/.tattoy-installed-via-brew"
         ok "tattoy installed via Homebrew"
         return 0
     fi
@@ -646,12 +676,14 @@ tattoy_cargo_path() {
     if $DRY_RUN; then
         info "WOULD: cargo install tattoy"
         TATTOY_INSTALLED_BY_US=true
+        write_marker_now "$INSTALL_DIR/.tattoy-installed-by-us"
         return 0
     fi
     info "Running: cargo install tattoy"
     if cargo install tattoy; then
         ok "tattoy installed"
         TATTOY_INSTALLED_BY_US=true
+        write_marker_now "$INSTALL_DIR/.tattoy-installed-by-us"
         return 0
     fi
     warn "cargo install tattoy failed; you can retry later."
@@ -772,6 +804,7 @@ else
             info "WOULD: prompt to cargo install tattoy (assume yes)"
             info "WOULD: cargo install tattoy"
             TATTOY_INSTALLED_BY_US=true
+            write_marker_now "$INSTALL_DIR/.tattoy-installed-by-us"
         else
             answer="n"
             printf '    Install tattoy via cargo? [Y/n] '
@@ -782,6 +815,7 @@ else
                     if cargo install tattoy; then
                         ok "tattoy installed"
                         TATTOY_INSTALLED_BY_US=true
+                        write_marker_now "$INSTALL_DIR/.tattoy-installed-by-us"
                     else
                         warn "cargo install tattoy failed; you can retry later."
                     fi
@@ -800,6 +834,19 @@ else
 fi
 
 # -- Project installation ---------------------------------------------------
+
+# Several install paths below rm -rf $INSTALL_DIR. Ownership markers recorded by
+# an earlier run must survive that, or uninstall can no longer offer to clean up
+# tooling we installed (the tool is already present, so this run won't re-set the
+# flag). Snapshot them now; restored just before the marker block below.
+MARKER_BACKUP=""
+if [ -d "$INSTALL_DIR" ] && ! $DRY_RUN; then
+    MARKER_BACKUP="$(mktemp -d)"
+    for _m in "$INSTALL_DIR"/.*-installed-by-us "$INSTALL_DIR"/.*-installed-via-*; do
+        [ -f "$_m" ] || continue
+        cp "$_m" "$MARKER_BACKUP/"
+    done
+fi
 
 run_or_dry mkdir -p "$(dirname "$INSTALL_DIR")"
 
@@ -877,6 +924,15 @@ else
 fi
 
 # -- Persist interpreter path + markers -------------------------------------
+
+# Restore markers from a previous install before layering this run's on top.
+if [ -n "$MARKER_BACKUP" ]; then
+    for _m in "$MARKER_BACKUP"/.*-installed-by-us "$MARKER_BACKUP"/.*-installed-via-*; do
+        [ -f "$_m" ] || continue
+        cp "$_m" "$INSTALL_DIR/"
+    done
+    rm -rf "$MARKER_BACKUP"
+fi
 
 # .python-bin is the source of truth for bin/clippy at runtime.
 write_file "$INSTALL_DIR/.python-bin" "$PYTHON_BIN"

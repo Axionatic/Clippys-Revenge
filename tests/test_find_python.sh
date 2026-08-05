@@ -117,6 +117,11 @@ setup_version_pinned_picks_newest() {
     export PATH="$TMP/bin:$PATH"
 }
 
+setup_only_3_14() {
+    make_fake_python "$TMP/bin/python3.14" 3 14
+    export PATH="$TMP/bin:$PATH"
+}
+
 setup_falls_back_to_3_10() {
     make_fake_python "$TMP/bin/python3.10" 3 10
     export PATH="$TMP/bin:$PATH"
@@ -140,6 +145,7 @@ setup_too_old_rejected() {
 
 run_test "CLIPPY_PYTHON override wins"   "python_override"        setup_clippy_python_override
 run_test "version-pinned picks newest"   "python3.13"             setup_version_pinned_picks_newest
+run_test "version-pinned finds 3.14"     "python3.14"             setup_only_3_14
 run_test "version-pinned 3.10 fallback"  "python3.10"             setup_falls_back_to_3_10
 run_test "uv-managed CPython discovered" "uv/python/cpython-3.13" setup_uv_managed
 run_test "rejects <3.10"                 "FAIL"                   setup_too_old_rejected

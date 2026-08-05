@@ -112,6 +112,22 @@ def ensure_executable(path: Path) -> None:
         print(f"clippy: could not make {path} executable: {e}", file=sys.stderr)
 
 
+def _stage_unified_runner() -> str:
+    """Copy unified_runner.py into the cache dir and normalize its shebang.
+
+    Copied rather than run in place so ensure_executable() never rewrites the
+    tracked checkout's shebang — a git-based install would otherwise fail
+    `git pull --ff-only` the moment upstream also touches this file.
+    """
+    runner_src = Path(__file__).resolve().parent / "unified_runner.py"
+    cache_dir = Path.home() / ".cache" / "clippys-revenge"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    runner_path = str(cache_dir / "unified_runner.py")
+    shutil.copy2(runner_src, runner_path)
+    ensure_executable(Path(runner_path))
+    return runner_path
+
+
 def _escape_toml_string(s: str) -> str:
     """Escape a string for safe interpolation into a TOML quoted value."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
@@ -671,8 +687,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # Use unified runner as the plugin entry point
-    runner_path = str(Path(__file__).resolve().parent / "unified_runner.py")
-    ensure_executable(Path(runner_path))
+    runner_path = _stage_unified_runner()
 
     # Set PYTHONPATH so the effect subprocess can import clippy.*
     project_root = str(Path(__file__).resolve().parent.parent)

@@ -274,7 +274,7 @@ class TestMain:
     def test_launch_execs_tattoy(self, tmp_path):
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp") as mock_exec:
             main(["--effects", "fire"])
@@ -288,7 +288,7 @@ class TestMain:
     def test_command_passthrough(self):
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml") as mock_gen, \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):
             main(["--effects", "fire", "--", "vim", "file.txt"])
@@ -325,7 +325,7 @@ class TestMain:
     def test_launch_uses_unified_runner(self):
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml") as mock_gen, \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):
             main(["--effects", "fire"])
@@ -337,7 +337,7 @@ class TestMain:
         """When no --effects flag, CLIPPY_EFFECTS is NOT set in env."""
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):
             os.environ["CLIPPY_EFFECTS"] = "stale"
@@ -351,7 +351,7 @@ class TestMain:
         """--effects fire sets CLIPPY_EFFECTS=fire in env."""
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):
             main(["--effects", "fire"])
@@ -362,7 +362,7 @@ class TestMain:
         """--effects fire,grove sets CLIPPY_EFFECTS=fire,grove."""
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):
             main(["--effects", "fire,grove"])
@@ -373,7 +373,7 @@ class TestMain:
         """--effects fire,fire,grove deduplicates to fire,grove."""
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):
             main(["--effects", "fire,fire,grove"])
@@ -384,7 +384,7 @@ class TestMain:
         """--effects ' fire , grove ' strips whitespace."""
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):
             main(["--effects", " fire , grove "])
@@ -395,7 +395,7 @@ class TestMain:
         """--effects fire,bogus warns but continues with fire only."""
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):
             result = main(["--effects", "fire,bogus"])
@@ -409,7 +409,7 @@ class TestMain:
         """--optimised off skips native build."""
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch("clippy.launcher._try_build_native") as mock_build, \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):
@@ -421,7 +421,7 @@ class TestMain:
         """--optimised on with native available proceeds."""
         with mock.patch("clippy.launcher.find_tattoy", return_value="/usr/bin/tattoy"), \
              mock.patch("clippy.launcher.generate_config", return_value="/tmp/test.toml"), \
-             mock.patch("clippy.launcher.ensure_executable"), \
+             mock.patch("clippy.launcher._stage_unified_runner", return_value="/tmp/unified_runner.py"), \
              mock.patch.dict("sys.modules", {"clippy_native": mock.MagicMock()}), \
              mock.patch("time.sleep"), \
              mock.patch("os.execvp"):

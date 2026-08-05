@@ -219,12 +219,18 @@ if $MARK_HOMEBREW; then
     warn "We installed Homebrew for you during install."
     warn "Other tools almost certainly depend on this. Remove only if Clippy was your sole reason for installing it."
     if prompt_yn "Remove Homebrew (runs the official Homebrew uninstaller)?" "n"; then
-        if ! /bin/bash -c \
-            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh)" -- --force; then
+        # Download to a file first: a failed `$(curl ...)` would expand to an
+        # empty script that `bash -c` runs successfully, falsely reporting removal.
+        brew_uninstaller="$(mktemp)"
+        if ! curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh \
+                -o "$brew_uninstaller" || [ ! -s "$brew_uninstaller" ]; then
+            warn "Could not download the Homebrew uninstaller; remove manually if desired."
+        elif ! /bin/bash "$brew_uninstaller" --force; then
             warn "Homebrew uninstaller failed; remove manually if desired."
         else
             ok "Homebrew removed"
         fi
+        rm -f "$brew_uninstaller"
     fi
 fi
 
