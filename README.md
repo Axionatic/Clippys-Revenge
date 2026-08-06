@@ -43,10 +43,11 @@ For better performance on larger terminals, see [Optional: Rust Acceleration](#o
 No tattoy? No problem!
 
 ```bash
-clippy --demo fire|invaders|grove|microbes|paperclips|mascot
+# Choose one: fire, invaders, grove, microbes, paperclips, or mascot
+clippy --demo fire
 ```
 
-Ok that was sort of a lie. for the full compositor experience (effects overlay your real terminal), install [tattoy](https://tattoy.sh) and run:
+Okay, that was sort of a lie. For the full compositor experience (effects overlay your real terminal), install [tattoy](https://tattoy.sh) and run:
 
 ```bash
 clippy
@@ -172,10 +173,10 @@ after the terminal has been genuinely quiet for the full interval:
 clippy --sleep-only
 ```
 
-- **Any screen activity restarts the countdown.** That includes your typing *and* background
-  output — a build finishing or a `tail -f` counts as activity, so a chatty terminal keeps Clippy
-  asleep indefinitely. (The terminal protocol has no keypress event, so "activity" means "the
-  screen changed".)
+- **Any screen activity restarts the countdown.** That includes your typing, background output,
+  and resizing the terminal — a build finishing or a `tail -f` counts as activity, so a chatty
+  terminal keeps Clippy asleep indefinitely. (The terminal protocol has no keypress event, so
+  "activity" means a screen update or resize event.)
 - **Activity during the 10-second windup aborts it.** Catch Clippy going orange and press a key —
   he calms straight back down to watching. (Only visible when `CLIPPY_INTERVAL` is above 10.)
 - **The shake summon is disabled** — you can no longer short-circuit the countdown. Shaking

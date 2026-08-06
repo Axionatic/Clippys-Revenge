@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Clippy's Revenge is a Python plugin system for [tattoy](https://tattoy.sh) (a Rust terminal compositor). Plugins communicate with tattoy via line-delimited JSON on stdin/stdout. The project has zero third-party Python dependencies — stdlib only, Python 3.10+. `pytest` is the sole dev dependency.
+Clippy's Revenge is a Python plugin system for [tattoy](https://tattoy.sh) (a Rust terminal compositor). Plugins communicate with tattoy via line-delimited JSON on stdin/stdout. The project has zero third-party runtime dependencies — stdlib only, Python 3.10+. The `dev` extra installs pytest and mypy.
 
 ## Commands
 
@@ -81,7 +81,7 @@ User runs `clippy` CLI
 **Core modules:**
 
 - `clippy/types.py` — Protocol dataclasses (`Cell`, `Pixel`, `PTYUpdate`, `TTYResize`, `OutputText`, `OutputCells`, `OutputPixels`) and JSON serialization. `from_json()` never raises — returns `None` for any malformed input. Also contains `CursorShakeDetector` (detects 5 x-axis reversals within 60 ticks; has `reset()` to clear state at phase boundaries).
-- `clippy/harness.py` — `Effect` protocol, `step()` (single-tick test seam), and `run()` (threaded stdin/stdout protocol loop with frame-rate control).
+- `clippy/harness.py` — `Effect` protocol, `step()` (single-tick test seam), `resolve_fps()` (the shared `CLIPPY_FPS` resolver), and `run()` (threaded stdin/stdout protocol loop with frame-rate control).
 - `clippy/mascot_render.py` — Shared mascot rendering: constants (face geometry, blink/pulse timing) and `render_mascot(visual_state, tick_count, width, height) -> list[Cell]`. Used by both `mascot.py` and `unified.py`.
 - `clippy/unified.py` — `UnifiedEffect` wraps an inner effect class + mascot overlay in a single state machine: `WATCHING → IMMINENT_EARLY → IMMINENT_DEEP → ACTIVE → CACKLING → loop`. Has its own `CursorShakeDetector` (only accepted during WATCHING and ACTIVE phases).
 - `clippy/unified_runner.py` — Tattoy plugin entry point. Reads `CLIPPY_EFFECTS` env var (comma-separated), wraps effect class(es) in `UnifiedEffect`, runs protocol loop.
@@ -128,13 +128,14 @@ The golden files in `tests/golden/` are the source of truth for wire format.
 - `run()` seams: `clock`, `writer`, `flush`, `reader` — all injectable for testing
 - Interruptible sleep via `shutdown.wait(timeout=...)`, never `time.sleep()`
 - Logging to `~/.cache/clippys-revenge/logs/clippy-<name>.log` — NEVER write logs to stdout (corrupts protocol)
-- `CLIPPY_FPS` env var overrides frame rate; `CLIPPY_LOG_LEVEL` controls log verbosity
+- `CLIPPY_FPS` env var overrides frame rate; `resolve_fps()` is the single source of truth used by both the harness scheduler and sleep-only timing. `CLIPPY_LOG_LEVEL` controls log verbosity
 - `CLIPPY_EFFECTS` env var (comma-separated) tells `unified_runner.py` which effect(s) to load
 - `CLIPPY_INTERVAL` env var overrides idle time between effect cycles (default `300` = 5 min)
 - `CLIPPY_FORCE_PYTHON` env var (`1`/`true`/`yes`) disables native module dispatch
 - `CLIPPY_NO_TOAST` env var (`1`/`true`/`yes`) suppresses the startup mode toast
 - `CLIPPY_SHAKE` env var — `off` to disable cursor-shake detection, or a positive integer to set reversal threshold (default `5`)
-- `CLIPPY_SLEEP_ONLY` env var (`1`/`true`/`yes`) — screensaver mode: any `PTYUpdate` restarts the idle countdown (`UnifiedEffect._reset_idle()`), and the WATCHING shake-summon is disabled. Read at call time in `UnifiedEffect.__init__` (not module level — module-level reads break `monkeypatch.setenv` in tests). No-op in demo mode. The windup-abort is only observable when `CLIPPY_INTERVAL > 10`, since below that `_imminent_early_start` is negative
+- `CLIPPY_SLEEP_ONLY` env var (`1`/`true`/`yes`) — screensaver mode: any `PTYUpdate` or `TTYResize` restarts the idle countdown (`UnifiedEffect._reset_idle()`), and the WATCHING shake-summon is disabled. Read at call time in `UnifiedEffect.__init__` (not module level — module-level reads break `monkeypatch.setenv` in tests). No-op in demo mode. Sleep-only timing uses the effective FPS, rounds the interval up, and accounts for the harness's immediate post-dispatch tick so an effect never fires early. The windup is only observable when `CLIPPY_INTERVAL > 10`; shorter intervals may skip directly to the highest elapsed phase
+- A waiting-phase `TTYResize` updates `UnifiedEffect`'s saved PTY snapshot. Inner effects initialize from `PTYUpdate` and ignore resize while IDLE, so the resized snapshot must be forwarded when the next inner effect starts
 - Launcher auto-detects Rust toolchain and builds `clippy_native` on first run if `cargo` is available
 - Active theme persisted in `~/.cache/clippys-revenge/theme.json`; user-imported themes stored in `~/.cache/clippys-revenge/themes/*.json`
 - Theme palette written to `~/.cache/clippys-revenge/palette.toml` (258 entries: ANSI 0-15 from theme, 16-231 standard xterm 6x6x6 cube, 232-255 standard grayscale, plus foreground/background)
@@ -146,7 +147,7 @@ The golden files in `tests/golden/` are the source of truth for wire format.
 - **Property-based tests** for effects: assert coordinates in bounds, colors in `[0.0, 1.0]`, correct output types — parametrized over multiple seeds.
 - **`MessageReader`** helper in `test_harness.py` prevents premature shutdown in `run()` tests (plain `io.StringIO` hits EOF instantly, setting the shutdown event).
 - **Malformed input resilience:** `from_json()` returns `None` for empty lines, whitespace, invalid JSON, unknown keys, null payloads — harness must never crash on bad input.
-- **Unified lifecycle** (`UnifiedEffect`): `WATCHING → IMMINENT_EARLY → IMMINENT_DEEP → ACTIVE (inner effect) → CACKLING → loop` (live) or `→ DONE` (demo). Cursor-shake: WATCHING → jump to IMMINENT_DEEP; ACTIVE → cancel inner effect; all other phases ignore L+R completely. Under `--sleep-only`: a PTY update in WATCHING/IMMINENT_EARLY/IMMINENT_DEEP resets to WATCHING, the WATCHING summon is gated off, and the ACTIVE dismiss is unchanged.
+- **Unified lifecycle** (`UnifiedEffect`): `WATCHING → IMMINENT_EARLY → IMMINENT_DEEP → ACTIVE (inner effect) → CACKLING → loop` (live) or `→ DONE` (demo). Cursor-shake: WATCHING → jump to IMMINENT_DEEP; ACTIVE → cancel inner effect; all other phases ignore L+R completely. Under `--sleep-only`: a PTY update or terminal resize in WATCHING/IMMINENT_EARLY/IMMINENT_DEEP resets to WATCHING, the WATCHING summon is gated off, and the ACTIVE dismiss is unchanged. Exact-boundary tests cover fractional intervals, non-default/1 FPS scheduling, repeated cycles, resize-only startup, and PTY-then-resize startup with a real inner effect.
 - Inner effect lifecycles (standalone, driven by `cancel()` / `is_done`):
   - Fire: `IDLE → SPREADING → BURNING → WASTELAND → DONE` (or `cancel()` → `CANCEL_FADING → DONE`)
   - Invaders: `IDLE → BOMBARDMENT → ACTIVE → FADING → DONE` (ACTIVE capped at 1050 ticks; `cancel()` skips to FADING)
@@ -164,7 +165,7 @@ The golden files in `tests/golden/` are the source of truth for wire format.
 |---|---|---|
 | `sys.stdin` | `io.StringIO` via fixture | Feed JSON lines to harness |
 | `sys.stdout` | `writer=list.append` injection | Capture protocol output |
-| `os.execvp` | `execvp=mock` injection | Prevent process replacement |
+| `os.execvp` | `mock.patch("os.execvp")` | Prevent process replacement |
 | `shutil.which` | `monkeypatch.setattr` | Test tattoy found/not-found |
 | `os.get_terminal_size` | `monkeypatch.setattr` | Demo mode in headless CI |
 | `time.monotonic` | `clock=fake_clock.now` injection | Deterministic tick timing |
@@ -173,4 +174,3 @@ The golden files in `tests/golden/` are the source of truth for wire format.
 | `clippy.themes._cache_dir` | `mock.patch` return `tmp_path` | Isolate theme persistence |
 | `clippy.themes._themes_dir` | `mock.patch` return `tmp_path` | Isolate user theme storage |
 | `tty.setraw` / `termios.*` | `mock.patch` | Test TUI browser without real terminal |
-

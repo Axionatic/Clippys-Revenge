@@ -68,6 +68,18 @@ def _setup_logging(name: str) -> logging.Logger:
     return logger
 
 
+def resolve_fps(fps: int = 30, *, logger: logging.Logger | None = None) -> int:
+    """Resolve the effective scheduler FPS, including the environment override."""
+    raw_fps = os.environ.get("CLIPPY_FPS")
+    if raw_fps is not None:
+        try:
+            fps = int(raw_fps)
+        except ValueError:
+            if logger is not None:
+                logger.warning("Invalid CLIPPY_FPS=%r, using default %d", raw_fps, fps)
+    return max(1, fps)
+
+
 def _stdin_listener(
     reader,
     msg_queue: queue.Queue,
@@ -119,13 +131,7 @@ def run(
 
     logger = _setup_logging(name)
 
-    raw_fps = os.environ.get("CLIPPY_FPS")
-    if raw_fps is not None:
-        try:
-            fps = int(raw_fps)
-        except ValueError:
-            logger.warning("Invalid CLIPPY_FPS=%r, using default %d", raw_fps, fps)
-    fps = max(1, fps)
+    fps = resolve_fps(fps, logger=logger)
     frame_budget = 1.0 / fps
 
     shutdown = threading.Event()
