@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 
@@ -774,3 +775,278 @@ def test_zero_size_terminal_resize():
     effect.on_resize(TTYResize(width=0, height=0))
     outputs = effect.tick()
     assert isinstance(outputs, list)
+
+
+# ---------------------------------------------------------------------------
+# --sleep-only
+# ---------------------------------------------------------------------------
+
+def _drive_shake(effect):
+    """Feed the shake gesture as direct on_pty_update calls (no ticking)."""
+    from clippy.types import from_json
+    for msg in _shake_msgs():
+        parsed = from_json(msg)
+        if parsed is not None:
+            effect.on_pty_update(parsed)
+
+
+def test_sleep_only_activity_resets_timer():
+    """Sleep-only: a PTY update restarts the countdown."""
+    idle_secs = 15
+    effect = UnifiedEffect(FakeEffect, idle_secs=idle_secs, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+
+    ticks_needed = round((idle_secs - 10) * FPS) - BLINK_DURATION - 1
+    advance(effect, ticks_needed)
+    assert effect.phase == UnifiedPhase.WATCHING
+
+    effect.on_pty_update(make_pty_update(80, 24))
+    advance(effect, ticks_needed)
+    assert effect.phase == UnifiedPhase.WATCHING
+
+
+def test_sleep_only_resize_resets_timer():
+    """Sleep-only: a terminal resize restarts the countdown."""
+    idle_secs = 15
+    effect = UnifiedEffect(FakeEffect, idle_secs=idle_secs, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+
+    ticks_needed = round((idle_secs - 10) * FPS) - BLINK_DURATION - 1
+    advance(effect, ticks_needed)
+    assert effect.phase == UnifiedPhase.WATCHING
+
+    effect.on_resize(TTYResize(width=100, height=30))
+    advance(effect, ticks_needed)
+    assert effect.phase == UnifiedPhase.WATCHING
+
+
+def test_sleep_only_fires_when_idle():
+    """Sleep-only: with no activity the effect still fires on schedule."""
+    effect = UnifiedEffect(FakeEffect, idle_secs=15, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert run_to_phase(effect, UnifiedPhase.ACTIVE, max_ticks=round(16 * FPS))
+
+
+@pytest.mark.parametrize("idle_secs", [0.15, 0.2])
+def test_sleep_only_waits_full_interval_after_activity(idle_secs):
+    """Sleep-only never fires before a full interval has elapsed."""
+    effect = UnifiedEffect(FakeEffect, idle_secs=idle_secs, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+
+    # The first tick is dispatched immediately after the activity callback, so
+    # activation needs one more tick than the number of elapsed frame periods.
+    advance(effect, math.ceil(idle_secs * FPS))
+    assert effect.phase != UnifiedPhase.ACTIVE
+
+    effect.tick()
+    assert effect.phase == UnifiedPhase.ACTIVE
+
+
+def test_sleep_only_uses_configured_fps(monkeypatch):
+    """Sleep-only converts the interval using the scheduler's configured FPS."""
+    monkeypatch.setenv("CLIPPY_FPS", "60")
+    effect = UnifiedEffect(FakeEffect, idle_secs=1, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+
+    advance(effect, 60)
+    assert effect.phase in (
+        UnifiedPhase.WATCHING,
+        UnifiedPhase.IMMINENT_EARLY,
+        UnifiedPhase.IMMINENT_DEEP,
+    )
+
+    effect.tick()
+    assert effect.phase == UnifiedPhase.ACTIVE
+
+
+def test_sleep_only_reaches_deadline_at_one_fps():
+    """Short windup thresholds do not delay activation past the full interval."""
+    effect = UnifiedEffect(
+        FakeEffect,
+        idle_secs=1,
+        seed=42,
+        sleep_only=True,
+        fps=1,
+    )
+    effect.on_pty_update(make_pty_update(80, 24))
+
+    effect.tick()  # dispatched immediately; zero elapsed frame periods
+    assert effect.phase != UnifiedPhase.ACTIVE
+
+    effect.tick()  # one elapsed second
+    assert effect.phase == UnifiedPhase.ACTIVE
+
+
+def test_sleep_only_waits_full_interval_between_cycles():
+    """A completed cycle starts a fresh full sleep-only interval."""
+    idle_secs = 0.2
+    effect = UnifiedEffect(FakeEffect, idle_secs=idle_secs, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert run_to_phase(effect, UnifiedPhase.CACKLING, max_ticks=50)
+    assert run_to_phase(effect, UnifiedPhase.WATCHING, max_ticks=round(6 * FPS))
+
+    advance(effect, math.ceil(idle_secs * FPS))
+    assert effect.phase != UnifiedPhase.ACTIVE
+
+    effect.tick()
+    assert effect.phase == UnifiedPhase.ACTIVE
+
+
+def test_sleep_only_activity_aborts_imminent_early():
+    """Sleep-only: activity during IMMINENT_EARLY returns to WATCHING."""
+    effect = UnifiedEffect(FakeEffect, idle_secs=15, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert run_to_phase(effect, UnifiedPhase.IMMINENT_EARLY, max_ticks=round(6 * FPS))
+
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert effect.phase == UnifiedPhase.WATCHING
+
+
+def test_sleep_only_activity_aborts_imminent_deep():
+    """Sleep-only: activity during IMMINENT_DEEP returns to WATCHING."""
+    effect = UnifiedEffect(FakeEffect, idle_secs=15, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert run_to_phase(effect, UnifiedPhase.IMMINENT_DEEP, max_ticks=round(11 * FPS))
+
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert effect.phase == UnifiedPhase.WATCHING
+
+
+@pytest.mark.parametrize(
+    ("phase", "max_ticks"),
+    [
+        (UnifiedPhase.IMMINENT_EARLY, round(6 * FPS)),
+        (UnifiedPhase.IMMINENT_DEEP, round(11 * FPS)),
+    ],
+)
+def test_sleep_only_resize_aborts_windup(phase, max_ticks):
+    """Sleep-only: a terminal resize during windup returns to WATCHING."""
+    effect = UnifiedEffect(FakeEffect, idle_secs=15, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert run_to_phase(effect, phase, max_ticks=max_ticks)
+
+    effect.on_resize(TTYResize(width=100, height=30))
+    assert effect.phase == UnifiedPhase.WATCHING
+
+
+@pytest.mark.parametrize("with_initial_pty", [False, True])
+def test_sleep_only_resize_before_activation_sizes_real_inner_effect(with_initial_pty):
+    """The latest waiting-phase resize initializes a real inner effect."""
+    effect = UnifiedEffect(
+        FireEffect,
+        idle_secs=0.2,
+        seed=42,
+        sleep_only=True,
+    )
+    if with_initial_pty:
+        effect.on_pty_update(make_pty_update(80, 24))
+    effect.on_resize(TTYResize(width=40, height=12))
+    assert run_to_phase(effect, UnifiedPhase.ACTIVE, max_ticks=10)
+    assert effect._inner is not None
+    effect.tick()
+    assert (effect._inner._width, effect._inner._height) == (40, 12)
+    assert effect._inner.phase.name != "IDLE"
+
+
+def test_sleep_only_disables_shake_summon():
+    """Sleep-only: L+R during WATCHING never summons an effect."""
+    # idle_secs=30 so WATCHING extends well past the summon's 5s fuse.
+    effect = UnifiedEffect(FakeEffect, idle_secs=30, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    for _ in range(5):
+        effect.tick()
+
+    step(effect, _shake_msgs())
+    # The detector was never fed at all.
+    assert effect._shake._reversal_ticks == []
+
+    # Past the summon fuse (5s) with no further input: still WATCHING.
+    advance(effect, round(5 * FPS) + 10)
+    assert effect.phase == UnifiedPhase.WATCHING
+
+
+def test_sleep_only_shake_still_cancels_during_active():
+    """Sleep-only: L+R during ACTIVE still cancels the inner effect."""
+    effect = UnifiedEffect(FakeEffect, idle_secs=15, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert run_to_phase(effect, UnifiedPhase.ACTIVE, max_ticks=round(16 * FPS))
+    assert effect._inner is not None
+    assert not effect._inner._cancelled
+
+    _drive_shake(effect)
+    assert effect._inner._cancelled
+
+
+def test_sleep_only_plain_activity_does_not_cancel():
+    """Sleep-only: non-shaking activity during ACTIVE leaves the effect running."""
+    effect = UnifiedEffect(FakeEffect, idle_secs=15, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert run_to_phase(effect, UnifiedPhase.ACTIVE, max_ticks=round(16 * FPS))
+    assert effect._inner is not None
+
+    for _ in range(10):
+        effect.on_pty_update(make_pty_update(80, 24, cursor=(5, 5)))
+
+    assert effect.phase == UnifiedPhase.ACTIVE
+    assert not effect._inner._cancelled
+
+
+def test_sleep_only_cackling_ignores_activity():
+    """Sleep-only: CACKLING is unaffected by PTY updates."""
+    effect = UnifiedEffect(FakeEffect, idle_secs=15, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert run_to_phase(effect, UnifiedPhase.CACKLING, max_ticks=round(16 * FPS))
+
+    step(effect, _shake_msgs())
+    assert effect.phase == UnifiedPhase.CACKLING
+    assert effect._shake._reversal_ticks == []
+
+
+def test_activity_does_not_reset_timer_without_sleep_only():
+    """Regression: without --sleep-only, PTY updates do NOT delay the countdown."""
+    idle_secs = 15
+    effect = UnifiedEffect(FakeEffect, idle_secs=idle_secs, seed=42, sleep_only=False)
+    effect.on_pty_update(make_pty_update(80, 24))
+
+    # Steady activity throughout the countdown.
+    for _ in range(round((idle_secs - 10) * FPS)):
+        effect.tick()
+        effect.on_pty_update(make_pty_update(80, 24))
+
+    assert effect.phase == UnifiedPhase.IMMINENT_EARLY
+
+
+def test_sleep_only_env_var_enables(monkeypatch):
+    """CLIPPY_SLEEP_ONLY=1 enables sleep-only without the kwarg."""
+    monkeypatch.setenv("CLIPPY_SLEEP_ONLY", "1")
+    idle_secs = 15
+    effect = UnifiedEffect(FakeEffect, idle_secs=idle_secs, seed=42)
+    assert effect._sleep_only
+    effect.on_pty_update(make_pty_update(80, 24))
+
+    ticks_needed = round((idle_secs - 10) * FPS) - BLINK_DURATION - 1
+    advance(effect, ticks_needed)
+    effect.on_pty_update(make_pty_update(80, 24))
+    advance(effect, ticks_needed)
+    assert effect.phase == UnifiedPhase.WATCHING
+
+
+def test_sleep_only_env_var_ignored_in_demo(monkeypatch):
+    """CLIPPY_SLEEP_ONLY=1 is a no-op in demo mode."""
+    monkeypatch.setenv("CLIPPY_SLEEP_ONLY", "1")
+    effect = UnifiedEffect(FakeEffect, idle_secs=0, seed=42)
+    assert not effect._sleep_only
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert effect.phase == UnifiedPhase.ACTIVE
+
+
+def test_sleep_only_composes_with_shake_off(monkeypatch):
+    """--sleep-only + --shake off: no summon and no dismiss path."""
+    monkeypatch.setenv("CLIPPY_SHAKE", "off")
+    effect = UnifiedEffect(FakeEffect, idle_secs=15, seed=42, sleep_only=True)
+    effect.on_pty_update(make_pty_update(80, 24))
+    assert run_to_phase(effect, UnifiedPhase.ACTIVE, max_ticks=round(16 * FPS))
+    assert effect._inner is not None
+
+    _drive_shake(effect)
+    assert not effect._inner._cancelled

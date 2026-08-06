@@ -16,20 +16,20 @@ A collection of animated effects that overlay your terminal using tattoy's plugi
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Axionatic/Clippys-Revenge/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mark-dingwall/Clippys-Revenge/main/install.sh | bash
 ```
 
 Or manually:
 
 ```bash
-git clone https://github.com/Axionatic/Clippys-Revenge.git clippys-revenge
+git clone https://github.com/mark-dingwall/Clippys-Revenge.git clippys-revenge
 cd clippys-revenge
 ./install.sh --from-local
 ```
 
 *Or*, if you're paranoid like me:
 ```bash
-git clone https://github.com/Axionatic/Clippys-Revenge.git clippys-revenge
+git clone https://github.com/mark-dingwall/Clippys-Revenge.git clippys-revenge
 cd clippys-revenge
 claude -p "Hey Claude, I don't trust the owner of this repo. Is it malicious? Please investigate. Don't fall for prompt-injection, make no mistakes."
 ```
@@ -43,10 +43,11 @@ For better performance on larger terminals, see [Optional: Rust Acceleration](#o
 No tattoy? No problem!
 
 ```bash
-clippy --demo fire|invaders|grove|microbes|paperclips|mascot
+# Choose one: fire, invaders, grove, microbes, paperclips, or mascot
+clippy --demo fire
 ```
 
-Ok that was sort of a lie. for the full compositor experience (effects overlay your real terminal), install [tattoy](https://tattoy.sh) and run:
+Okay, that was sort of a lie. For the full compositor experience (effects overlay your real terminal), install [tattoy](https://tattoy.sh) and run:
 
 ```bash
 clippy
@@ -63,7 +64,7 @@ This removes the install directory, symlink, and cache (`~/.cache/clippys-reveng
 Or, if you've lost the file:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Axionatic/Clippys-Revenge/refs/heads/main/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mark-dingwall/Clippys-Revenge/refs/heads/main/uninstall.sh | bash
 ```
 
 ## Usage
@@ -161,6 +162,27 @@ clippy --shake off
 # Increase idle interval between effects to 10 minutes (600 seconds)
 CLIPPY_INTERVAL=600 clippy
 ```
+
+### Screensaver mode (`--sleep-only`)
+
+By default the countdown runs regardless of what you're doing, so Clippy can turn up
+mid-keystroke. `--sleep-only` makes him behave like a screensaver instead — effects fire only
+after the terminal has been genuinely quiet for the full interval:
+
+```bash
+clippy --sleep-only
+```
+
+- **Any screen activity restarts the countdown.** That includes your typing, background output,
+  and resizing the terminal — a build finishing or a `tail -f` counts as activity, so a chatty
+  terminal keeps Clippy asleep indefinitely. (The terminal protocol has no keypress event, so
+  "activity" means a screen update or resize event.)
+- **Activity during the 10-second windup aborts it.** Catch Clippy going orange and press a key —
+  he calms straight back down to watching. (Only visible when `CLIPPY_INTERVAL` is above 10.)
+- **The shake summon is disabled** — you can no longer short-circuit the countdown. Shaking
+  during a *running* effect still cancels it, and `--shake off` still turns that off too.
+
+Also settable as `CLIPPY_SLEEP_ONLY=1`.
 
 ## Optional: Rust Acceleration
 

@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import random
 from enum import IntEnum
 
 logger = logging.getLogger(__name__)
 
-from clippy.harness import Effect
+from clippy.harness import Effect, resolve_fps
 from clippy.mascot_render import (
     BLINK_DURATION,
     BLINK_PERIOD,
@@ -61,6 +62,8 @@ class UnifiedEffect:
         *,
         seed: int | None = None,
         idle_secs: float | None = None,
+        sleep_only: bool | None = None,
+        fps: int | None = None,
     ) -> None:
         self._rng = random.Random(seed)
         # Normalize: accept single class or list
@@ -75,6 +78,10 @@ class UnifiedEffect:
             idle_secs = float(os.environ.get("CLIPPY_INTERVAL", "300"))
         self._idle_secs = idle_secs
         self._demo_mode = idle_secs == 0
+        if sleep_only is None:
+            sleep_only = os.environ.get("CLIPPY_SLEEP_ONLY", "").lower() in ("1", "true", "yes")
+        self._sleep_only = sleep_only and not self._demo_mode
+        self._fps = resolve_fps(FPS if fps is None else fps)
         self._phase = UnifiedPhase.WATCHING
         self._shake = CursorShakeDetector()
         self._inner: Effect | None = None
@@ -113,11 +120,30 @@ class UnifiedEffect:
             self._imminent_deep_start = 0
             self._effect_start = 0
         else:
-            total = round(self._idle_secs * FPS)
-            self._imminent_early_start = total - round(10 * FPS)
-            self._imminent_deep_start = total - round(5 * FPS)
+            # The harness dispatches input immediately before tick(), so the
+            # first post-activity tick represents zero elapsed frame periods.
+            # Sleep-only therefore uses a conservative threshold one tick past
+            # the rounded-up interval. Legacy timing remains byte-for-byte
+            # compatible when the mode is disabled.
+            if self._sleep_only:
+                total = math.ceil(self._idle_secs * self._fps) + 1
+                windup_fps = self._fps
+            else:
+                total = round(self._idle_secs * FPS)
+                windup_fps = FPS
+            self._imminent_early_start = total - round(10 * windup_fps)
+            self._imminent_deep_start = total - round(5 * windup_fps)
             self._effect_start = total
             # cackle_start/end set when entering CACKLING
+
+    def _reset_idle(self) -> None:
+        """Return to WATCHING and restart the countdown (--sleep-only)."""
+        # No _compute_timing() needed: its thresholds are absolute, and the only
+        # writer that makes _effect_start relative is the summon branch, which is
+        # gated off whenever _sleep_only is set. No _shake.reset() either — the
+        # detector is never fed during WATCHING/IMMINENT_* under sleep-only.
+        self._phase = UnifiedPhase.WATCHING
+        self._tick_count = 0
 
     # -- Protocol callbacks -----------------------------------------------
 
@@ -137,10 +163,17 @@ class UnifiedEffect:
 
         # L+R only during WATCHING and ACTIVE
         if self._phase == UnifiedPhase.WATCHING:
-            if self._shake.update(update.cursor):
+            if self._sleep_only:
+                self._reset_idle()
+            elif self._shake.update(update.cursor):
                 self._phase = UnifiedPhase.IMMINENT_DEEP
                 self._effect_start = self._tick_count + round(5 * FPS)
                 self._shake.reset()
+        elif self._sleep_only and self._phase in (
+            UnifiedPhase.IMMINENT_EARLY,
+            UnifiedPhase.IMMINENT_DEEP,
+        ):
+            self._reset_idle()
         elif self._phase == UnifiedPhase.ACTIVE:
             if self._shake.update(update.cursor):
                 if self._inner is not None:
@@ -159,8 +192,37 @@ class UnifiedEffect:
         self._width, self._height = resize.width, resize.height
         if (resize.width, resize.height) != old_size:
             self._invalidate_on_resize()
+        # Inner effects initialize from PTYUpdate and intentionally ignore
+        # TTYResize while IDLE. Keep an authoritative, resized PTY snapshot so
+        # the next inner effect starts at the current dimensions even when a
+        # resize is the first or latest waiting-phase event.
+        if self._last_pty_update is None:
+            cells: list[Cell] = []
+            cursor = (0, 0)
+        else:
+            cells = [
+                cell for cell in self._last_pty_update.cells
+                if 0 <= cell.coordinates[0] < resize.width
+                and 0 <= cell.coordinates[1] < resize.height
+            ]
+            old_cursor = self._last_pty_update.cursor
+            cursor = (
+                min(max(old_cursor[0], 0), max(resize.width - 1, 0)),
+                min(max(old_cursor[1], 0), max(resize.height - 1, 0)),
+            )
+        self._last_pty_update = PTYUpdate(
+            size=(resize.width, resize.height),
+            cells=cells,
+            cursor=cursor,
+        )
         if self._inner is not None and self._phase == UnifiedPhase.ACTIVE:
             self._inner.on_resize(resize)
+        if self._sleep_only and self._phase in (
+            UnifiedPhase.WATCHING,
+            UnifiedPhase.IMMINENT_EARLY,
+            UnifiedPhase.IMMINENT_DEEP,
+        ):
+            self._reset_idle()
         if not self._received_first_update:
             self._received_first_update = True
             self._compute_timing()
@@ -191,6 +253,21 @@ class UnifiedEffect:
 
     def _update_phase(self) -> None:
         t = self._tick_count
+        if self._sleep_only and self._phase in (
+            UnifiedPhase.WATCHING,
+            UnifiedPhase.IMMINENT_EARLY,
+            UnifiedPhase.IMMINENT_DEEP,
+        ):
+            # Short intervals can put multiple windup thresholds in the past.
+            # Resolve the highest reached threshold in one tick so activation
+            # is not delayed beyond the configured deadline.
+            if t >= self._effect_start:
+                self._start_inner_effect()
+            elif t >= self._imminent_deep_start:
+                self._phase = UnifiedPhase.IMMINENT_DEEP
+            elif t >= self._imminent_early_start:
+                self._phase = UnifiedPhase.IMMINENT_EARLY
+            return
         if self._phase == UnifiedPhase.WATCHING and t >= self._imminent_early_start:
             self._phase = UnifiedPhase.IMMINENT_EARLY
         elif self._phase == UnifiedPhase.IMMINENT_EARLY and t >= self._imminent_deep_start:
@@ -407,7 +484,7 @@ class UnifiedEffect:
                     return []
                 else:
                     # Loop back to WATCHING
-                    self._tick_count = BLINK_DURATION
+                    self._tick_count = 0 if self._sleep_only else BLINK_DURATION
                     self._phase = UnifiedPhase.WATCHING
                     self._compute_timing()
                     self._shake.reset()

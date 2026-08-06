@@ -4,13 +4,13 @@
 # Usage:
 #   bash install.sh           # install latest from GitHub
 #   bash install.sh --from-local   # install from this working directory (for development)
-#   curl -fsSL https://raw.githubusercontent.com/Axionatic/Clippys-Revenge/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/mark-dingwall/Clippys-Revenge/main/install.sh | bash
 
 set -euo pipefail
 
 INSTALL_DIR="$HOME/.local/share/clippys-revenge"
 BIN_DIR="$HOME/.local/bin"
-REPO_URL="https://github.com/Axionatic/Clippys-Revenge.git"
+REPO_URL="https://github.com/mark-dingwall/Clippys-Revenge.git"
 SCRIPT_DIR=""
 
 # -- Argument parsing --------------------------------------------------------
