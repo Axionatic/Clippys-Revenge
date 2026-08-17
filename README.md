@@ -8,6 +8,11 @@ Clippy's Revenge is a visual effects plugin system for [tattoy](https://tattoy.s
 
 A collection of animated effects that overlay your terminal using tattoy's plugin protocol. Each effect is a small Python process that reads JSON from stdin and writes JSON to stdout.
 
+| | | |
+| --- | --- | --- |
+| ![Fire demo](assets/demos/fire.gif) | ![Invaders demo](assets/demos/invaders.gif) | ![Grove demo](assets/demos/grove.gif) |
+| ![Microbes demo](assets/demos/microbes.gif) | ![Paperclips demo](assets/demos/paperclips.gif) | ![Clippy demo](assets/demos/clippy.gif) |
+
 ## Requirements
 
 - [tattoy](https://tattoy.sh) installed and on your `PATH`
@@ -93,23 +98,13 @@ clippy --startup-pause
 
 **Fire**: the ol' reliable. When in doubt, burn it to ash.
 
-![Fire demo](assets/demos/fire.gif)
-
 **Invaders**: an initial round of Shock and Awe followed by full invasion.
-
-![Invaders demo](assets/demos/invaders.gif)
 
 **Grove**: nature rises up to reclaim your terminal. It's actually quite pretty.
 
-![Grove demo](assets/demos/grove.gif)
-
 **Microbes**: hungry microbes dash and wiggle over your screen, eating your work.
 
-![Microbes demo](assets/demos/microbes.gif)
-
 **Paperclips**: it was inevitable that Clippy would dominate the world one day.
-
-![Paperclips demo](assets/demos/paperclips.gif)
 
 **Mascot**: Clippy watches from the corner with open contempt. Breaking your flow and ruining your productivity is the only thing that brings joy to his cold, calloused heart.
 
