@@ -16,7 +16,7 @@ A collection of animated effects that overlay your terminal using tattoy's plugi
 ## Requirements
 
 - [tattoy](https://tattoy.sh) installed and on your `PATH`
-- Python 3.10+
+- Python 3.10+ (Python 3.11+ recommended for better performance)
 
 ## Install
 
