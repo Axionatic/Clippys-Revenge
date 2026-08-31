@@ -687,6 +687,7 @@ class InvadersEffect:
         cells: list[Cell] = []
         alpha = self._fade_alpha()
         top_alpha = self._top_zone_alpha()
+        opaque_black: Color = (0.0, 0.0, 0.0, 1.0)
 
         def add(cell: Cell) -> None:
             cells.append(cell)
@@ -716,9 +717,8 @@ class InvadersEffect:
                              fg=rubble_fg, bg=(0.0, 0.0, 0.0, top_alpha)))
         elif self._bombard_rubble:
             # Fade complete — fully opaque black, clear bombardment rubble
-            _OPAQUE_BLACK: Color = (0.0, 0.0, 0.0, 1.0)
             self._top_zone_cache = [
-                Cell(character=" ", coordinates=(tx, ty), fg=None, bg=_OPAQUE_BLACK)
+                Cell(character=" ", coordinates=(tx, ty), fg=None, bg=opaque_black)
                 for ty in range(self._top_zone_height)
                 for tx in range(self._width)
             ]
@@ -764,10 +764,9 @@ class InvadersEffect:
         self._explosions = live_explosions
 
         # 5. Rubble (static — always emitted at same positions)
-        _OPAQUE_BLACK: Color = (0.0, 0.0, 0.0, 1.0)
         rubble_fg = self._tint(RUBBLE_COLOR, alpha)
         for (rx, ry), ch in self._rubble.items():
-            cells.append(Cell(character=ch, coordinates=(rx, ry), fg=rubble_fg, bg=_OPAQUE_BLACK))
+            cells.append(Cell(character=ch, coordinates=(rx, ry), fg=rubble_fg, bg=opaque_black))
 
         # 6. Flung text debris
         live_flung: list[_Flung] = []

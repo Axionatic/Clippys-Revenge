@@ -568,10 +568,10 @@ def main(argv: list[str] | None = None) -> int:
     # --demo (all effects allowed, including overlays)
     if args.demo:
         if args.demo not in effects:
-            available = ", ".join(sorted(effects))
+            available_effects = ", ".join(sorted(effects))
             _print_clippy_message(
                 "It looks like you're trying to demo an effect!",
-                [f"Unknown effect: {args.demo}", "", f"Available: {available}"],
+                [f"Unknown effect: {args.demo}", "", f"Available: {available_effects}"],
             )
             return 1
 

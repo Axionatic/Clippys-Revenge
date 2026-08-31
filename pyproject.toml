@@ -22,3 +22,7 @@ include = ["clippy*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+disable_error_code = ["import-untyped"]
+ignore_missing_imports = true

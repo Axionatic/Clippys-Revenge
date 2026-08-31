@@ -328,13 +328,13 @@ class UnifiedEffect:
         self._bg_buffer = {}
         if self._last_pty_update is not None:
             for cell in self._last_pty_update.cells:
-                self._bg_buffer[tuple(cell.coordinates)] = cell
+                self._bg_buffer[cell.coordinates] = cell
         self._touched = set()
 
     def _overlay(self, base: dict[tuple[int, int], Cell], top: list[Cell]) -> None:
         """Layer top cells onto base dict, inheriting bg when top has bg=None."""
         for cell in top:
-            pos = tuple(cell.coordinates)
+            pos = cell.coordinates
             if cell.bg is not None:
                 base[pos] = cell
             else:
@@ -400,7 +400,7 @@ class UnifiedEffect:
         destructive = getattr(self._inner, 'destructive', True)
         cur_effect_pos: set[tuple[int, int]] = set()
         for cell in effect_cells:
-            pos = tuple(cell.coordinates)
+            pos = cell.coordinates
             cur_effect_pos.add(pos)
             if destructive or cell.bg is not None:
                 self._touched.add(pos)
@@ -415,7 +415,7 @@ class UnifiedEffect:
             mascot_msg = mascot_msgs[0]
             assert isinstance(mascot_msg, OutputCells)
             for cell in mascot_msg.cells:
-                cur_mascot_pos.add(tuple(cell.coordinates))
+                cur_mascot_pos.add(cell.coordinates)
             self._overlay(frame, mascot_msg.cells)
 
         self._prev_effect_pos = cur_effect_pos
